@@ -252,7 +252,7 @@ func (s *Scanner) reader(client *arp.Client) {
 
 			names, err := net.LookupAddr(resp.SourceIP.String())
 			if err == nil && len(names) > 0 {
-				resp.Host = strings.ToLower(names[0])
+				resp.Host = strings.ToLower(strings.TrimRight(names[0], "."))
 			}
 
 			s.log.Printf("response: [%s] %s (host: %q)", resp.SourceHardwareAddr.String(), resp.SourceIP.String(), resp.Host)
