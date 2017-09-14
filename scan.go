@@ -2,12 +2,27 @@
 // of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 
+// Package arpme is a simple arp scanning library.
+//
+// An example:
+// 	scanner, err := New(Config{
+// 		HandlerFunc: func(resp Response) {
+// 			log.Printf("response: [%s] :: %s :: %s", resp.SourceHardwareAddr.String(), resp.SourceIP.String(), resp.Host)
+// 		},
+// 	})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+//
+// 	log.Println(scanner.Run())
 package arpme
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"strings"
@@ -22,13 +37,20 @@ type Config struct {
 	// DisallowInterfaceError will cause Start() to return an error if it can't
 	// listen to an interface.
 	DisallowInterfaceError bool
+
 	// Delay is the time between each loop of arp requests.
 	Delay time.Duration
+
 	// Interfaces to send/listen for arp requests. If this is empty, it will
 	// attempt to listen to all known interfaces.
 	Interfaces []net.Interface
 
+	// HandlerFunc is executed when we receive a valid arp response. It is
+	// executed in its own goroutine.
 	HandlerFunc func(Response)
+
+	// Debug is an optional writer which will be used for debug output.
+	Debug io.Writer
 }
 
 // Scanner is a arp scanning client.
@@ -38,15 +60,23 @@ type Scanner struct {
 	errs    chan error
 	err     error
 
+	log  *log.Logger
 	conf *Config
 }
 
 // Response is the tailored response output from the arp packets we received.
 type Response struct {
-	SourceIP           net.IP
+	// SourceIP is the IP of the source that responded to the arp request.
+	SourceIP net.IP
+
+	// SourceHardwareAddr is the MAC of the source that responded to the arp request.
 	SourceHardwareAddr net.HardwareAddr
-	Host               string
-	Timestamp          time.Time
+
+	// Host is the first rDNS entry returned for the source IP, if one exists.
+	Host string
+
+	// Timestamp is when the request was received.
+	Timestamp time.Time
 }
 
 // New returns a new scanner.
@@ -72,7 +102,15 @@ func New(conf Config) (*Scanner, error) {
 		}
 	}
 
-	return &Scanner{conf: &conf}, nil
+	s := &Scanner{conf: &conf}
+
+	if conf.Debug == nil {
+		conf.Debug = ioutil.Discard
+	}
+
+	s.log = log.New(conf.Debug, "arp: ", log.LstdFlags)
+
+	return s, nil
 }
 
 // Start initiates a scan loop on each interface, and only returns an error
@@ -96,7 +134,7 @@ func (s *Scanner) Start() error {
 				return fmt.Errorf("unable to scan %s: %s", iface.Name, err)
 			}
 
-			log.Printf("skipping interface %s: %s", iface.Name, err)
+			s.log.Printf("skipping interface %s: %s", iface.Name, err)
 		}
 
 		s.clients = append(s.clients, c)
@@ -137,19 +175,6 @@ func (s *Scanner) Close() {
 	}
 }
 
-func main() {
-	scanner, err := New(Config{
-		HandlerFunc: func(resp Response) {
-			log.Printf("response: [%s] :: %s :: %s", resp.SourceHardwareAddr.String(), resp.SourceIP.String(), resp.Host)
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println(scanner.Run())
-}
-
 func (s *Scanner) scan(iface net.Interface) (*arp.Client, error) {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
 	var addr *net.IPNet
@@ -188,7 +213,7 @@ func (s *Scanner) scan(iface net.Interface) (*arp.Client, error) {
 		return nil, err
 	}
 
-	log.Printf("starting scan on %s [%s] with network: %s", iface.Name, iface.HardwareAddr, addr)
+	s.log.Printf("starting scan on %s [%s] with network: %s", iface.Name, iface.HardwareAddr, addr)
 
 	go s.reader(client)
 	go s.requester(client, addr)
@@ -230,6 +255,7 @@ func (s *Scanner) reader(client *arp.Client) {
 				resp.Host = strings.ToLower(names[0])
 			}
 
+			s.log.Printf("response: [%s] %s (host: %q)", resp.SourceHardwareAddr.String(), resp.SourceIP.String(), resp.Host)
 			go s.conf.HandlerFunc(resp)
 		}
 	}
@@ -256,13 +282,13 @@ func (s *Scanner) requester(client *arp.Client, addr *net.IPNet) {
 
 					err = client.SetWriteDeadline(time.Now().Add(3 * time.Second))
 					if err != nil {
-						log.Printf("error: %s", err)
+						s.log.Printf("error: %s", err)
 						return
 					}
 
 					err = client.Request(ip)
 					if err != nil {
-						log.Printf("error: %s", err)
+						s.log.Printf("error: %s", err)
 					}
 				}(ipAddr)
 			}
