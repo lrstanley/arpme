@@ -1,8 +1,6 @@
-## arpme -- Simple arp scanning library for Go.
+# arpme [![status](https://travis-ci.org/lrstanley/arpme.svg?branch=master)](https://travis-ci.org/lrstanley/arpme) [![godoc](https://godoc.org/github.com/lrstanley/arpme?status.png)](https://godoc.org/github.com/lrstanley/arpme) [![goreport](https://goreportcard.com/badge/github.com/lrstanley/arpme)](https://goreportcard.com/report/github.com/lrstanley/arpme)
 
-[![status](https://travis-ci.org/lrstanley/arpme.svg?branch=master)](https://travis-ci.org/lrstanley/arpme)
-[![godoc](https://godoc.org/github.com/lrstanley/arpme?status.png)](https://godoc.org/github.com/lrstanley/arpme)
-[![goreport](https://goreportcard.com/badge/github.com/lrstanley/arpme)](https://goreportcard.com/report/github.com/lrstanley/arpme)
+arpme is a simple arp scanning library for Go.
 
 ## Contributing
 
