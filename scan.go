@@ -266,34 +266,42 @@ func (s *Scanner) requester(client *arp.Client, addr *net.IPNet) {
 
 	ipList := ips(addr)
 	ticker := time.NewTicker(s.conf.Delay)
+	firstrun := make(chan struct{}, 1)
+	firstrun <- struct{}{}
+
+	invoke := func() {
+		pool := sempool.New(10)
+
+		for _, ipAddr := range ipList {
+			pool.Slot()
+
+			go func(ip net.IP) {
+				defer pool.Free()
+
+				err = client.SetWriteDeadline(time.Now().Add(3 * time.Second))
+				if err != nil {
+					s.log.Printf("error: %s", err)
+					return
+				}
+
+				err = client.Request(ip)
+				if err != nil {
+					s.log.Printf("error: %s", err)
+				}
+			}(ipAddr)
+		}
+
+		pool.Wait()
+	}
 
 	for {
 		select {
+		case <-firstrun:
+			invoke()
 		case <-s.closer:
 			return
 		case <-ticker.C:
-			pool := sempool.New(10)
-
-			for _, ipAddr := range ipList {
-				pool.Slot()
-
-				go func(ip net.IP) {
-					defer pool.Free()
-
-					err = client.SetWriteDeadline(time.Now().Add(3 * time.Second))
-					if err != nil {
-						s.log.Printf("error: %s", err)
-						return
-					}
-
-					err = client.Request(ip)
-					if err != nil {
-						s.log.Printf("error: %s", err)
-					}
-				}(ipAddr)
-			}
-
-			pool.Wait()
+			invoke()
 		}
 	}
 }
